@@ -1,0 +1,479 @@
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:widget="http://www.netvibes.com/ns/"  >
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta http-equiv="Expires" content="" />
+    <meta name="author" content="Will Law"/>
+    <meta name="description" content="Search reviews on Yelp from Netvibes." />
+    <meta name="apiVersion" content="1.0" />
+    <meta name="autoRefresh" content="20" />
+    <meta name="debugMode" content="false" />
+    <link rel="stylesheet" type="text/css" href="http://www.netvibes.com/themes/uwa/style.css" />
+
+    <style type="text/css">
+        form {
+            padding: 5px 0;
+        }
+        input.sWord {
+            width: 24%;
+        }
+        input.sLoc {
+            width: 34%;
+        }
+        .error { 
+            display: block;
+            margin-top: 5px;
+        }
+        .nv-thumbnailedList {
+            list-style-type: none;
+        }
+        .nv-thumbnailedList li {
+            list-style-type: none;
+            padding: 5px;
+        }
+        .nv-thumbnailedList .item {
+            position: relative;
+            padding-bottom: 5px;
+            font-size: 11px;
+            background-image: none;
+        }
+        .nv-thumbnailedList .item .businessimage {
+            float: left;
+            padding-right: 5px;
+        }
+        .nv-thumbnailedList .item h3, .nv-thumbnailedList .item .description {
+            margin-left: 85px;
+        }
+        .nv-thumbnailedList .item h3 {
+            margin-top: -2px;
+            float: none;
+            margin-right: 5px;
+        }
+        .nv-thumbnailedList .item .header {
+            height: 20px;
+        }
+        .nv-thumbnailedList .item .header .rating {
+            float: left;
+        }
+        .nv-thumbnailedList .item .header .rating img {
+            display: block;
+            margin-top: 2px;
+            float: left;
+            margin-left: 1px;
+        } 
+        .nv-thumbnailedList .item .header .rating span {
+            display: block;
+            margin-left: 55px;
+        } 
+        .nv-thumbnailedList .item .header .distance {
+            width: 85px;
+            float: left;
+        } 
+        .nv-thumbnailedList .item .review {
+            clear: both;
+            margin-top: 8px;
+        }
+        .nv-thumbnailedList .item .review a img {
+            float: left;
+            margin-right: 5px;
+            padding: 1px;
+            border: 1px solid #CCCCCC;
+        } 
+        .nv-thumbnailedList .item span.star {
+            display: none;
+        }
+        .nv-thumbnailedList li:hover span.star {
+            display: block;
+            height: 13px;
+            width: 13px;
+            background: transparent url(http://cdn.netvibes.com/img/sendModule/share-hover.png);
+            overflow: hidden;
+            text-indent: -1000em;
+            text-decoration: none;
+            cursor: pointer;
+            position: absolute;
+            top: 5px;
+            right: 5px;
+        }
+        .nv-thumbnailedList .pby a:hover img {
+            text-decoration: none;
+            border: none;
+        }
+        .logo {
+            margin-bottom: -5px;
+            padding-left: -1px;
+        }
+    </style>
+    <script type="text/javascript" src="http://www.netvibes.com/js/UWA/load.js.php?env=Standalone"></script>
+    <title>Local Search</title>
+
+    <link rel="icon" type="image/png" href="http://www.yelp.com/favicon.ico" />
+    <widget:preferences>
+        <!--<preference name="sWord" type="text" label="Default search term" defaultValue="vegetarian"/>
+        <preference name="sLoc" type="text" label="Default location" defaultValue="San Francisco, CA"/>-->
+        <preference name="sWord" type="hidden" defaultValue="vegetarian"/>
+        <preference name="sLoc" type="hidden" defaultValue="San Francisco, CA"/>
+
+        <preference name="maxResults" type="range" label="Number of items to display" defaultValue="3" step="1" min="1" max="20" onchange="yelpSearch.displayResults()" />
+        <preference name="displayImage" type="boolean" label="Display thumbnail" defaultValue="true" />
+        <preference name="displayReview" type="boolean" label="Display review" defaultValue="true" />
+        <preference name="search" type="hidden" defaultValue="" />
+        <preference name="offset" type="hidden" defaultValue="2" />
+    </widget:preferences>
+
+    <script type="text/javascript">
+
+    // Proxy emulation
+    /*if (document.location && document.location.hostname == 'www.willlaw.org') {
+        UWA.proxies.ajax = 'ajaxProxy.php';
+        UWA.Data.useJsonRequest = false;
+    }*/
+
+    var yelpSearch = {
+
+        /*
+         * Take yelp data and print results
+         */
+        displayResults : function(data) {
+            widget.log ("displayResults");
+            var errMessage = widget.body.getElementsByTagName("span")[0];
+            var listDiv = widget.body.getElementsByClassName("nv-thumbnailedList")[0];
+
+            // check what kind of data we got back
+            if (typeof(data) == "string") {
+                listDiv.empty(); 
+                //errMessage.appendText("No Businesses were found near that location");
+                yelpSearch.onError("No Businesses were found near that location");
+            } else {
+                if(data.message.text == "OK") {
+                    listDiv.empty(); 
+                    if (data.businesses.length == 0) {
+                        errMessage.appendText("No businesses were found near that location");
+                        var sLoc = widget.body.getElementsByClassName("sLoc")[0].value; 
+                        if (sLoc.search(/,/) == -1) {
+                            errMessage.appendChild(widget.createElement("br"));
+                            errMessage.appendText("Try a location of the form: ");
+                            errMessage.appendChild(widget.createElement("br"));
+                            errMessage.appendText("\"City, State\"");
+                        }
+                        return;
+                    }
+                    var items = data.businesses.length;
+                    if (items > (widget.getInt('offset') + widget.getInt('maxResults'))) {
+                        items = widget.getInt('offset') + widget.getInt('maxResults');
+                    }
+
+                    // iterate though results starting at offset and ending maxResults from offset
+                    for(var i = widget.getInt('offset'); i<items; i++) {
+                        var biz = data.businesses[i];
+                        var li = widget.createElement("li");
+                        li.setHTML(yelpSearch.displayItem(biz));
+                        li.addClassName("item");
+                        if (!widget.readOnly) {
+                            if(typeof widget.environment.netvibes == "undefined" || typeof widget.addStar == "undefined" ) {
+                                //cannot star
+                            } else {
+                                var span = widget.createElement('span');
+                                span.className = 'star';
+                                span.innerHTML = _("Star");
+                                span.onclick = function(e) {
+                                    var a = this.parentNode.firstChild;
+                                    e.stopPropagation();
+                                    var starUrl = this.parentNode.getChildren()[2].firstChild.href;
+                                    //var starTitle = li.getElementsByTagName('h3')[0].firstChild.firstChild;
+                                    var starTitle = this.parentNode.getChildren()[2].firstChild.firstChild.nodeValue;
+                                    widget.addStar({'title':starTitle, 'url':starUrl});
+                                    return false;
+                                };
+                                li.appendChild(span);
+                            }
+                        } 
+                        listDiv.appendChild(li);
+                        if(yelpSearch.isEven(i)) {
+                            li.addClassName('even');
+                        } else {
+                            li.addClassName('odd');
+                        }
+                    }
+                    widget.setTitle('<a href="http://www.yelp.com">Local Search (' + data.businesses.length + ')</a>');
+                    var pByHtml = 'Powered by <a href="http://www.yelp.com"><img src="http://media4.px.yelpcdn.com/static/20101216159295510/i/map/miniMapLogo.png" width="40" height="20" class="logo" /></a>.';
+                    var pBy = widget.createElement("li",{'class' : 'item pby'}).setHTML(pByHtml);
+                    listDiv.appendChild(pBy);
+                    yelpSearch.doPaging(data); 
+                    widget.callback('onUpdateBody');
+                } else {
+                    listDiv.empty(); 
+                    errMessage.appendText("Error: " + data.message.text);
+                }
+            }
+        },
+
+        /*
+         * Construct the URL to call for the API request
+         */
+        onFailure: function (error) {
+            widget.log(error);
+            var errMessage = widget.body.getElementsByTagName("span")[0];
+            errMessage.appendText(error);
+        },
+
+        /*
+         * Construct the URL to call for the API request
+         */
+        getURL : function (word,loc) {
+            widget.log ('getURL()');
+            var URL = "http://api.yelp.com/business_review_search?" + "&term=" + word + 
+            "&location=" + loc + "&num_biz_requested=20&ywsid=Skb_UnlLdUjC1RuxQ6S6Jg";
+            return encodeURI(URL);
+        },
+
+        /*
+         * clear last search, ajax call 
+         */
+        doSearch : function (word,loc) {
+            widget.log ("doSearch()");
+            var listDiv = widget.body.getElementsByClassName("nv-thumbnailedList")[0];
+            listDiv.empty(); 
+            var pagingDiv = widget.body.getElementsByClassName("paging")[0];
+            if (pagingDiv) {
+                pagingDiv.empty();
+            }
+            //var errMessage = widget.body.getElementsByClassName("error")[0];
+            var errMessage = widget.body.getElementsByTagName("span")[0];
+            if (errMessage) {
+                errMessage.empty();
+            }
+            var listDivLi = listDiv.appendChild(widget.createElement("li"));
+            listDivLi.setStyle("background-image","none");
+            listDivLi.setStyle("paddingLeft","5px");
+            listDivLi.appendText("Loading..."); 
+            widget.setValue("offset",0);
+            widget.setTitle("<a href=\"http://www.yelp.com\">Local Search</a>");
+            word = yelpSearch.stripScripts(word).stripTags();
+            loc = yelpSearch.stripScripts(loc).stripTags();
+
+            widget.setValue("sWord",word);
+            widget.setValue("sLoc",loc);
+            //if (errMessage.hasChildNodes()) {
+            //    var errText = errMessage.childNodes[0];
+            //    errMessage.removeChild(errText);
+            //}
+            //UWA.Data.getJson(getURL(word,loc), yelpSearch.displayResults);
+            UWA.Data.request(
+                yelpSearch.getURL(word,loc),
+                {
+                    method: 'get',
+                    proxy: 'ajax',
+                    type: 'json',
+                    cache: 3600,
+                    onComplete: yelpSearch.displayResults,
+                    onFailure: yelpSearch.onError
+                });
+        },
+
+        /*
+         * Returns true if value is even, false otherwise
+         */
+        isEven : function (value){
+            if (value%2 == 0)
+                return true;
+            else
+                return false;
+        },
+
+        /*
+         * Formats and returns html for search result.
+         */
+        displayItem : function (biz) {
+            widget.log('displayItem');
+
+            // rating 
+            var text = "<div class=\"header\">";
+            // distance to one decimal place
+            text += '<div class="distance">' + biz.distance.toFixed(1) + ' miles</div>';
+            text += '<div class=\"rating\"><img src="' + biz.rating_img_url_small;
+            text += '" /><span>' + biz.review_count + '&nbsp;reviews</span></div>';
+            text += '</div>';
+
+            // image and rating
+            if (widget.getValue("displayImage") == "true" && biz.photo_url.slice(-20) != "blank_biz_medium.gif" ){
+                text += '<img class="businessimage" src="'+biz.photo_url+'" width="75" height="75"/>';
+                text += '<h3><a href="'+biz.url+'" target="_blank">'+biz.name+'</a></h3>';
+                text += '<p class="description">';
+            } else {
+                // name/url
+                text += '<h3 style="margin-left:0;float:none;"><a href="'+biz.url+'" target="_blank">'+biz.name+'</a></h3>';
+                text += '<p style="margin-left:0;float:none;" class="description">';
+            }
+            // categories
+            text += yelpSearch.formatCategories(biz.categories);
+            // neighborhoods
+            if(biz.neighborhoods.length)
+                text += yelpSearch.formatNeighborhoods(biz.neighborhoods);
+            // address
+            if(biz.address1.length)
+                text += biz.address1 + '<br/>';
+            // address2
+            if(biz.address2.length) 
+                text += biz.address2+ '<br/>';
+            // city, state and zip
+            text += biz.city + ',&nbsp;' + biz.state + '&nbsp;' + biz.zip + '<br/>';
+            // phone number
+            if(biz.phone.length)
+                text += yelpSearch.formatPhoneNumber(biz.phone);
+            text += "</p>";
+            if ((widget.getValue("displayReview") == "true") && biz.reviews.length) {
+                text += yelpSearch.formatReview(biz.reviews[0]);
+            }
+            return text;
+        },
+
+
+        /*
+         * Formats review html
+         */
+        formatReview : function (review) {
+            var s = "<div class=\"review\">" + "<a href=\"" + review.user_url + "\"><img src=\"" + 
+                    review.user_photo_url_small + "\" width=\"20\" height=\"20\" />" + "</a>" + 
+                    review.text_excerpt + " <a href=\"" + review.url + "\">see more</a></div>";
+            return s;
+        }, 
+
+        /*
+         * Formats categories html
+         */
+        formatCategories : function (cats) {
+            var s = "";
+            if (cats.length >=2) {
+                s = "Categories: ";
+            } else {
+                s = "Category: ";
+            }
+            for (var i=0; i<cats.length; i++) {
+                s+= '<a href="' + cats[i].search_url + '">' + cats[i].name + '</a>';
+                if (i != cats.length-1) {
+                    s += ', ';
+                }
+            }
+            s += '<br/>';
+            return s;
+        },
+
+        /*
+         * Formats neighbourhoods html
+         */
+        formatNeighborhoods : function (neighborhoods) {
+            if (neighborhoods.length >= 2)
+                s = 'Neighborhoods: ';
+            else
+               s = 'Neighborhood: '; 
+            for(var i=0; i<neighborhoods.length; i++) {
+                var loc = neighborhoods[i].url.substr(36);
+                s += '<a href="' + neighborhoods[i].url + '" target="_blank">' + neighborhoods[i].name + '</a>';
+                if (i != neighborhoods.length-1) s += ', ';
+            }
+            s += '<br/>';
+            return s;
+        },
+
+        /*
+         * Formats phone number
+         */
+        formatPhoneNumber : function (num) {
+            if(num.length != 10) return '';
+            return '(' + num.slice(0,3) + ') ' + num.slice(3,6) + '-' + num.slice(6,10) + '<br/>';
+        },
+        
+        /*
+         * Paging
+         */
+         doPaging : function (data) {
+            var paging = widget.body.getElementsByClassName("paging")[0];
+            if (!paging) { 
+                var paging = widget.createElement("div");
+                paging.addClassName("paging");
+                widget.addBody(paging);
+            }
+            var pager = new UWA.Controls.Pager(
+            {
+                module: yelpSearch,
+                limit: widget.getInt("maxResults"),
+                offset: widget.getInt("offset"),
+                dataArray: data.businesses
+            }
+            );
+            pager.onChange = function(newOffset) {
+                widget.setValue('offset', newOffset);
+                yelpSearch.displayResults(data);
+            }
+            var pagerDiv = UWA.$element(
+                widget.body.getElementsByClassName('paging')[0]
+            );
+            pagerDiv.setContent(pager.getContent() );
+        },
+
+        /*
+         * StripScripts
+         */
+        stripScripts : function(str) {
+            return str.replace(/<script[^>]*>[\S\s]*?<\/script>/img, '');
+        }
+    
+    }
+    
+    widget.onLoad = function() {
+        widget.log('widget.onLoad');
+        widget.setValue('offset', '0'); 
+
+        // if it's the first time the widget is loaded write the form html
+        if(!widget.body.getElementsByClassName("nvThumbnailedList")[0]) {
+            var searchForm = widget.createElement("form");
+            searchForm.appendText("Search for ");
+
+            searchForm.onsubmit = function(){
+                //return false;
+                yelpSearch.doSearch(widget.body.getElementsByTagName("input")[0].value,widget.body.getElementsByTagName("input")[1].value); 
+            };
+            var sWord = widget.getValue("sWord");
+            var searchInputText = widget.createElement("input",{
+                'type' : 'text', 
+                'class' : 'sWord', 
+                'name' : 'sWord', 
+                'value' : sWord, 
+                'size' : '10'
+            });
+
+            searchInputText.inject(searchForm);
+            searchForm.appendText(" in ");
+            var sLoc = widget.getValue("sLoc");
+            var searchInputLoc = widget.createElement("input",{
+                'type' : 'text', 
+                'class' : 'sLoc', 
+                'name' : 'sLoc', 
+                'value' : sLoc, 
+                'size' : '20'
+            });
+            searchForm.appendChild(searchInputLoc);
+            var searchInputButton = widget.createElement("input",{'type' : 'button', 'value' : 'Search'});
+
+            searchInputButton.onclick = function () {
+                yelpSearch.doSearch(widget.body.getElementsByTagName("input")[0].value,widget.body.getElementsByTagName("input")[1].value); 
+            }
+
+            searchForm.appendChild(searchInputButton);
+            searchForm.appendChild(widget.createElement("br"));
+            var searchError = widget.createElement("span",{'class' : 'error'});
+            searchForm.appendChild(searchError);
+            widget.setBody(searchForm);
+            var ul = widget.createElement("ul",{'class' : 'nv-thumbnailedList'});
+            widget.addBody(ul);
+        }
+        yelpSearch.doSearch(widget.getValue("sWord"),widget.getValue("sLoc"));
+    }
+
+    </script>
+    </head>
+
+    <body>
+    <p>Loading...</p>
+    </body>
+</html>
